@@ -1,0 +1,33 @@
+rules_version = '2';
+
+// ---------------------------------------------------------------
+// Paste this into: Firebase console → Firestore Database → Rules
+// ---------------------------------------------------------------
+// Anyone with the site link can read the menu, QR code, and orders
+// (that's the point — colleagues need to see the menu and place
+// orders without logging in).
+//
+// IMPORTANT LIMITATION: because there's no backend server, the
+// app checks the admin passcode by reading it and comparing in
+// the browser — so these rules can't fully hide it from a
+// technically determined person inspecting network traffic. What
+// they DO prevent is anyone overwriting the passcode once it's
+// set (so nobody can lock you out or reset it to something else).
+// This is a light gate for a small internal tool, not bank-grade
+// security — the same honest limitation as the earlier version
+// of this app. If you want real security later, the upgrade path
+// is Firebase Authentication (email/password login) instead of a
+// plain passcode.
+// ---------------------------------------------------------------
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /app-data/{key} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if key != "admin:passcode";
+      allow delete: if true;
+    }
+  }
+}
+
