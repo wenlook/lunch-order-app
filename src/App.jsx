@@ -14,7 +14,6 @@ import {
   ShoppingBag,
   ImagePlus,
   RefreshCw,
-  Clock,
   LogOut,
 } from "lucide-react";
 
@@ -53,14 +52,12 @@ import { storageGet, storageSet, storageDelete, storageList } from "./storage";
 function statusLabel(status) {
   if (status === "confirmed") return "paid";
   if (status === "rejected") return "rejected";
-  if (status === "pay_later") return "pay later";
   return "pending";
 }
 
 function toneForStatus(status) {
   if (status === "confirmed") return "confirmed";
   if (status === "rejected") return "rejected";
-  if (status === "pay_later") return "later";
   return "pending";
 }
 
@@ -271,7 +268,7 @@ function HomeScreen({ menu, onOrder, onAdmin }) {
       </div>
 
       <p className="text-center text-[10px] text-[#B3A992] mt-10">
-        Internal tool independently developed team use. Not affiliated with Touch 'n Go.
+        Internal lunch ordering · not affiliated with Touch 'n Go
       </p>
     </div>
   );
@@ -285,15 +282,40 @@ function UserFlow({ menu, qr, onBack, onRefreshMenu, onDone }) {
   const [step, setStep] = useState("name"); // name | menu | checkout | submitted
   const [name, setName] = useState("");
   const [cart, setCart] = useState({}); // dishId -> qty
-  const [payMethod, setPayMethod] = useState("tng"); // 'tng' | 'later'
+  const [proofImage, setProofImage] = useState("");
   const [submittedOrder, setSubmittedOrder] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [qrZoomed, setQrZoomed] = useState(false);
+  const [closedMessage, setClosedMessage] = useState("");
 
   useEffect(() => {
     onRefreshMenu();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // While the colleague is browsing the menu or at checkout (not yet
+  // submitted), periodically re-check whether the admin has closed
+  // ordering, and if so, send them back to the start.
+  useEffect(() => {
+    if (step !== "menu" && step !== "checkout") return;
+    const interval = setInterval(async () => {
+      const freshMenuVal = await storageGet("menu:current");
+      if (!freshMenuVal) return;
+      try {
+        const freshMenu = JSON.parse(freshMenuVal);
+        if (freshMenu.isOpen === false) {
+          onClosedMidOrder();
+        }
+      } catch (e) {}
+    }, 15000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
+
+  function onClosedMidOrder() {
+    setClosedMessage("Ordering just closed while you were choosing — please check with the admin.");
+    setStep("name");
+  }
 
   const dishes = menu.dishes || [];
   const items = Object.entries(cart)
@@ -309,17 +331,40 @@ function UserFlow({ menu, qr, onBack, onRefreshMenu, onDone }) {
     setCart((c) => ({ ...c, [dishId]: Math.max(0, qty) }));
   }
 
+  function handleProofFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setProofImage(reader.result);
+    reader.readAsDataURL(file);
+  }
+
   async function handleSubmitOrder() {
+    // Re-check ordering is still open right before submitting, in case
+    // the admin closed it while this colleague was mid-order.
     setSubmitting(true);
-    const status = payMethod === "later" ? "pay_later" : "submitted";
+    const freshMenuVal = await storageGet("menu:current");
+    let stillOpen = menu.isOpen;
+    if (freshMenuVal) {
+      try {
+        stillOpen = JSON.parse(freshMenuVal).isOpen !== false;
+      } catch (e) {}
+    }
+    if (!stillOpen) {
+      setSubmitting(false);
+      onClosedMidOrder();
+      return;
+    }
+
     const order = {
       id: uid("o"),
       date: todayStr(),
       name: name.trim(),
       items,
       total,
-      paymentMethod: payMethod,
-      status,
+      paymentMethod: "tng",
+      proofImage,
+      status: "submitted",
       createdAt: Date.now(),
     };
     await storageSet(`order:${order.date}:${order.id}`, JSON.stringify(order));
@@ -333,7 +378,15 @@ function UserFlow({ menu, qr, onBack, onRefreshMenu, onDone }) {
       <div className="px-6 pt-8 pb-10 min-h-screen flex flex-col">
         <BackRow onBack={onBack} label="Home" />
         <h2 className="fo-serif text-2xl mt-6 mb-1">Who's ordering?</h2>
-        <p className="text-sm text-[#7A7166] mb-6">Please fill in your name exactly as it appears on Touch ’n Go.</p>
+        <p className="text-sm text-[#7A7166] mb-6">So the admin knows whose order this is.</p>
+        {closedMessage && (
+          <div
+            className="rounded-lg border p-3 mb-4 text-xs"
+            style={{ borderColor: "#B33A2E", background: "#FBEEEC", color: "#B33A2E" }}
+          >
+            {closedMessage}
+          </div>
+        )}
         <input
           autoFocus
           value={name}
@@ -477,117 +530,106 @@ function UserFlow({ menu, qr, onBack, onRefreshMenu, onDone }) {
           </div>
         </div>
 
-        <div className="mb-5">
-          <div className="text-xs uppercase tracking-wide font-semibold text-[#7A7166] mb-2">
-            How will you pay?
-          </div>
-          <div className="grid grid-cols-2 gap-2">
+        <div
+          className="rounded-lg p-5 border mb-5 flex flex-col items-center text-center"
+          style={{ borderColor: "#DCD3C2", background: "#FFFFFF" }}
+        >
+          {qr.imageDataUrl ? (
             <button
-              onClick={() => setPayMethod("tng")}
-              className="rounded-lg border p-3 text-left"
-              style={{
-                borderColor: payMethod === "tng" ? "#1F5F5B" : "#DCD3C2",
-                background: payMethod === "tng" ? "#F0EADA" : "#FFFFFF",
-              }}
+              type="button"
+              onClick={() => setQrZoomed(true)}
+              className="mb-3 rounded"
             >
-              <div className="flex items-center gap-1.5 text-sm font-semibold" style={{ color: "#1F5F5B" }}>
-                <QrCode className="w-4 h-4" />
-                Pay now
-              </div>
-              <div className="text-xs text-[#7A7166] mt-0.5">Scan TnG QR</div>
+              <img
+                src={qr.imageDataUrl}
+                alt="TnG payment QR code"
+                className="w-48 h-48 object-contain rounded"
+              />
             </button>
-            <button
-              onClick={() => setPayMethod("later")}
-              className="rounded-lg border p-3 text-left"
-              style={{
-                borderColor: payMethod === "later" ? "#1F5F5B" : "#DCD3C2",
-                background: payMethod === "later" ? "#F0EADA" : "#FFFFFF",
-              }}
+          ) : (
+            <div
+              className="w-48 h-48 flex items-center justify-center rounded mb-3"
+              style={{ background: "#F0EADA", color: "#B3A992" }}
             >
-              <div className="flex items-center gap-1.5 text-sm font-semibold" style={{ color: "#1F5F5B" }}>
-                <Clock className="w-4 h-4" />
-                Pay later
-              </div>
-              <div className="text-xs text-[#7A7166] mt-0.5">Settle with admin directly</div>
-            </button>
+              <QrCode className="w-12 h-12" />
+            </div>
+          )}
+          {qr.imageDataUrl && (
+            <p className="text-[10px] text-[#B3A992] -mt-2 mb-1">Tap the QR to enlarge</p>
+          )}
+          <div className="text-xs uppercase tracking-wide text-[#7A7166] font-semibold mb-1">
+            Scan with TnG eWallet
           </div>
+          {qr.payeeName && <div className="fo-serif text-base">{qr.payeeName}</div>}
+          <div className="fo-num text-2xl font-semibold mt-2" style={{ color: "#1F5F5B" }}>
+            {money(total)}
+          </div>
+          {qr.note && <p className="text-xs text-[#7A7166] mt-2">{qr.note}</p>}
+          {!qr.imageDataUrl && (
+            <p className="text-xs text-[#B33A2E] mt-2">Admin hasn't uploaded a QR code yet.</p>
+          )}
         </div>
 
-        {payMethod === "tng" ? (
-          <>
-            <div
-              className="rounded-lg p-5 border mb-5 flex flex-col items-center text-center"
-              style={{ borderColor: "#DCD3C2", background: "#FFFFFF" }}
-            >
-              {qr.imageDataUrl ? (
-                <button
-                  type="button"
-                  onClick={() => setQrZoomed(true)}
-                  className="mb-3 rounded"
-                >
-                  <img
-                    src={qr.imageDataUrl}
-                    alt="TnG payment QR code"
-                    className="w-48 h-48 object-contain rounded"
-                  />
-                </button>
-              ) : (
-                <div
-                  className="w-48 h-48 flex items-center justify-center rounded mb-3"
-                  style={{ background: "#F0EADA", color: "#B3A992" }}
-                >
-                  <QrCode className="w-12 h-12" />
-                </div>
-              )}
-              {qr.imageDataUrl && (
-                <p className="text-[10px] text-[#B3A992] -mt-2 mb-1">Tap the QR to enlarge</p>
-              )}
-              <div className="text-xs uppercase tracking-wide text-[#7A7166] font-semibold mb-1">
-                Scan with TnG eWallet
-              </div>
-              {qr.payeeName && <div className="fo-serif text-base">{qr.payeeName}</div>}
-              <div className="fo-num text-2xl font-semibold mt-2" style={{ color: "#1F5F5B" }}>
-                {money(total)}
-              </div>
-              {qr.note && <p className="text-xs text-[#7A7166] mt-2">{qr.note}</p>}
-              {!qr.imageDataUrl && (
-                <p className="text-xs text-[#B33A2E] mt-2">Admin hasn't uploaded a QR code yet.</p>
-              )}
-            </div>
-
-            <p className="text-xs text-[#7A7166] mb-5 text-center leading-relaxed">
-              Pay the exact amount above via TnG, then tap the button below.
-              Your order will be marked <em>pending</em> until the admin
-              confirms the transfer landed.
-            </p>
-          </>
-        ) : (
-          <div
-            className="rounded-lg p-5 border mb-5 text-center"
-            style={{ borderColor: "#DCD3C2", background: "#FFFFFF" }}
-          >
-            <Clock className="w-8 h-8 mx-auto mb-2" style={{ color: "#6B5CA5" }} />
-            <p className="text-sm text-[#7A7166]">
-              No payment needed right now. Your order will be submitted as{" "}
-              <strong>pay later</strong>, and you'll settle{" "}
-              <span className="fo-num font-semibold" style={{ color: "#1F5F5B" }}>
-                {money(total)}
-              </span>{" "}
-              with the admin directly.
-            </p>
+        <div
+          className="rounded-lg p-4 border mb-5"
+          style={{ borderColor: "#DCD3C2", background: "#FFFFFF" }}
+        >
+          <div className="text-xs uppercase tracking-wide font-semibold text-[#7A7166] mb-3">
+            Upload payment screenshot
           </div>
-        )}
+          {proofImage ? (
+            <div className="flex flex-col items-center">
+              <img
+                src={proofImage}
+                alt="Payment screenshot preview"
+                className="w-full max-w-[220px] rounded-lg mb-3 border"
+                style={{ borderColor: "#DCD3C2" }}
+              />
+              <label
+                className="text-xs font-semibold px-4 py-2 rounded-md border cursor-pointer"
+                style={{ borderColor: "#DCD3C2" }}
+              >
+                Replace screenshot
+                <input type="file" accept="image/*" onChange={handleProofFile} className="hidden" />
+              </label>
+            </div>
+          ) : (
+            <label
+              className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed py-8 cursor-pointer"
+              style={{ borderColor: "#DCD3C2" }}
+            >
+              <ImagePlus className="w-6 h-6" style={{ color: "#B3A992" }} />
+              <span className="text-sm font-semibold" style={{ color: "#1F5F5B" }}>
+                Tap to upload a screenshot
+              </span>
+              <span className="text-xs text-[#7A7166]">Your TnG payment confirmation</span>
+              <input type="file" accept="image/*" onChange={handleProofFile} className="hidden" />
+            </label>
+          )}
+        </div>
+
+        <p className="text-xs text-[#7A7166] mb-5 text-center leading-relaxed">
+          Pay the exact amount above via TnG, upload a screenshot of the
+          confirmation, then tap the button below. Your order will be
+          marked <em>pending</em> until the admin confirms the transfer
+          landed.
+        </p>
 
         <div className="flex-1" />
         <button
-          disabled={submitting}
+          disabled={submitting || !proofImage}
           onClick={handleSubmitOrder}
           className="w-full rounded-lg py-3.5 font-semibold flex items-center justify-center gap-2 transition-transform active:scale-[0.98] disabled:opacity-60"
           style={{ background: "#1F5F5B", color: "#FAF6EE" }}
         >
           {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-          {payMethod === "tng" ? "I've completed payment — submit order" : "Submit order — pay later"}
+          I've completed payment — submit order
         </button>
+        {!proofImage && (
+          <p className="text-center text-xs text-[#B8842E] mt-2">
+            Upload your payment screenshot to continue
+          </p>
+        )}
       </div>
       {qrZoomed && qr.imageDataUrl && (
         <div
@@ -626,24 +668,11 @@ function UserFlow({ menu, qr, onBack, onRefreshMenu, onDone }) {
         </div>
         <h2 className="fo-serif text-2xl mb-2">Order submitted</h2>
         <p className="text-sm text-[#7A7166] mb-6 max-w-xs">
-          Thanks, {submittedOrder.name.split(" ")[0]}.{" "}
-          {submittedOrder.status === "pay_later" ? (
-            <>
-              Your order is marked{" "}
-              <Stamp tone={toneForStatus(submittedOrder.status)}>
-                {statusLabel(submittedOrder.status)}
-              </Stamp>{" "}
-              — please settle up with the admin.
-            </>
-          ) : (
-            <>
-              Your order is{" "}
-              <Stamp tone={toneForStatus(submittedOrder.status)}>
-                {statusLabel(submittedOrder.status)}
-              </Stamp>{" "}
-              until the admin confirms your payment came through.
-            </>
-          )}
+          Thanks, {submittedOrder.name.split(" ")[0]}. Your order is{" "}
+          <Stamp tone={toneForStatus(submittedOrder.status)}>
+            {statusLabel(submittedOrder.status)}
+          </Stamp>{" "}
+          until the admin confirms your payment came through.
         </p>
         <div className="rounded-lg p-4 border w-full text-left mb-8" style={{ borderColor: "#DCD3C2", background: "#FFFFFF" }}>
           {submittedOrder.items.map((it) => (
@@ -655,7 +684,7 @@ function UserFlow({ menu, qr, onBack, onRefreshMenu, onDone }) {
             </div>
           ))}
           <div className="border-t mt-2 pt-2 flex justify-between fo-serif" style={{ borderColor: "#DCD3C2" }}>
-            <span>{submittedOrder.status === "pay_later" ? "Total owed" : "Total paid"}</span>
+            <span>Total paid</span>
             <span className="fo-num">{money(submittedOrder.total)}</span>
           </div>
         </div>
@@ -1116,6 +1145,7 @@ function OrdersPanel() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState(null);
+  const [zoomedProof, setZoomedProof] = useState(null);
   const [confirmingId, setConfirmingId] = useState(null);
 
   const loadOrders = useCallback(async (d) => {
@@ -1159,11 +1189,9 @@ function OrdersPanel() {
 
   const totalCount = orders.length;
   const paid = orders.filter((o) => o.status === "confirmed");
-  const payLater = orders.filter((o) => o.status === "pay_later");
   const pending = orders.filter((o) => o.status === "submitted");
   const rejected = orders.filter((o) => o.status === "rejected");
   const paidTotal = paid.reduce((s, o) => s + o.total, 0);
-  const payLaterTotal = payLater.reduce((s, o) => s + o.total, 0);
 
   const amountBreakdown = (() => {
     const counts = {};
@@ -1197,15 +1225,16 @@ function OrdersPanel() {
         </button>
       </div>
 
-      <div className="grid grid-cols-3 gap-2 mb-2">
+      <div className="grid grid-cols-3 gap-2 mb-5">
         <StatBox label="Total orders" value={totalCount} tone="neutral" />
         <StatBox label="Paid" value={paid.length} sub={money(paidTotal)} tone="confirmed" />
-        <StatBox label="Pay later" value={payLater.length} sub={money(payLaterTotal)} tone="later" />
-      </div>
-      <div className="grid grid-cols-2 gap-2 mb-5">
         <StatBox label="Awaiting confirm" value={pending.length} tone="pending" />
-        <StatBox label="Rejected" value={rejected.length} tone="rejected" />
       </div>
+      {rejected.length > 0 && (
+        <div className="grid grid-cols-1 gap-2 mb-5">
+          <StatBox label="Rejected" value={rejected.length} tone="rejected" />
+        </div>
+      )}
 
       {amountBreakdown.length > 0 && (
         <div
@@ -1267,11 +1296,27 @@ function OrdersPanel() {
                 {order.items.map((it) => `${it.qty}× ${it.name}`).join(", ")}
               </div>
 
+              {order.proofImage && (
+                <button
+                  type="button"
+                  onClick={() => setZoomedProof(order.proofImage)}
+                  className="mb-3"
+                >
+                  <img
+                    src={order.proofImage}
+                    alt="Payment screenshot"
+                    className="w-16 h-16 object-cover rounded-md border"
+                    style={{ borderColor: "#DCD3C2" }}
+                  />
+                  <div className="text-[10px] text-[#7A7166] mt-1">Tap to view proof</div>
+                </button>
+              )}
+
               <div className="flex items-center justify-between">
                 <span className="fo-num text-lg font-semibold" style={{ color: "#1F5F5B" }}>
                   {money(order.total)}
                 </span>
-                {(order.status === "submitted" || order.status === "pay_later") && (
+                {order.status === "submitted" && (
                   <div className="flex gap-2">
                     <button
                       disabled={busyId === order.key}
@@ -1346,6 +1391,24 @@ function OrdersPanel() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {zoomedProof && (
+        <div
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center p-6"
+          style={{ background: "rgba(31,26,20,0.94)" }}
+          onClick={() => setZoomedProof(null)}
+        >
+          <img
+            src={zoomedProof}
+            alt="Payment screenshot enlarged"
+            className="w-full max-w-sm rounded-lg"
+            style={{ background: "#FFFFFF", padding: "12px" }}
+          />
+          <p className="text-xs mt-4" style={{ color: "#C7BCA8" }}>
+            Tap anywhere to close
+          </p>
         </div>
       )}
     </div>
