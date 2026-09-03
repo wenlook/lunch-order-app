@@ -333,7 +333,7 @@ function UserFlow({ menu, qr, onBack, onRefreshMenu, onDone }) {
       <div className="px-6 pt-8 pb-10 min-h-screen flex flex-col">
         <BackRow onBack={onBack} label="Home" />
         <h2 className="fo-serif text-2xl mt-6 mb-1">Who's ordering?</h2>
-        <p className="text-sm text-[#7A7166] mb-6">So the admin knows whose order this is.</p>
+        <p className="text-sm text-[#7A7166] mb-6">Please fill in your name exactly as it appears on Touch ’n Go.</p>
         <input
           autoFocus
           value={name}
