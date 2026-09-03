@@ -271,7 +271,7 @@ function HomeScreen({ menu, onOrder, onAdmin }) {
       </div>
 
       <p className="text-center text-[10px] text-[#B3A992] mt-10">
-        Internal lunch ordering · not affiliated with Touch 'n Go
+        Internal tool independently developed team use. Not affiliated with Touch 'n Go.
       </p>
     </div>
   );
