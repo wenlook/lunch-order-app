@@ -282,6 +282,8 @@ function UserFlow({ menu, qr, onBack, onRefreshMenu, onDone }) {
   const [step, setStep] = useState("name"); // name | menu | checkout | submitted
   const [name, setName] = useState("");
   const [cart, setCart] = useState({}); // dishId -> qty
+  const [customItems, setCustomItems] = useState([]); // [{id, name, qty}]
+  const [customFoodName, setCustomFoodName] = useState("");
   const [proofImage, setProofImage] = useState("");
   const [submittedOrder, setSubmittedOrder] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -331,6 +333,24 @@ function UserFlow({ menu, qr, onBack, onRefreshMenu, onDone }) {
     setCart((c) => ({ ...c, [dishId]: Math.max(0, qty) }));
   }
 
+  function addCustomItem() {
+    if (!customFoodName.trim()) return;
+    setCustomItems((prev) => [...prev, { id: uid("c"), name: customFoodName.trim(), qty: 1 }]);
+    setCustomFoodName("");
+  }
+
+  function setCustomItemQty(id, qty) {
+    if (qty <= 0) {
+      setCustomItems((prev) => prev.filter((c) => c.id !== id));
+      return;
+    }
+    setCustomItems((prev) => prev.map((c) => (c.id === id ? { ...c, qty } : c)));
+  }
+
+  function removeCustomItem(id) {
+    setCustomItems((prev) => prev.filter((c) => c.id !== id));
+  }
+
   function handleProofFile(e) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -361,9 +381,10 @@ function UserFlow({ menu, qr, onBack, onRefreshMenu, onDone }) {
       date: todayStr(),
       name: name.trim(),
       items,
+      customItems: customItems.map((c) => ({ name: c.name, qty: c.qty, price: null })),
       total,
       paymentMethod: "tng",
-      proofImage,
+      proofImage: total > 0 ? proofImage : "",
       status: "submitted",
       createdAt: Date.now(),
     };
@@ -397,7 +418,7 @@ function UserFlow({ menu, qr, onBack, onRefreshMenu, onDone }) {
         />
         <div className="flex-1" />
         <button
-          disabled={!name.trim() || !menu.isOpen || dishes.length === 0}
+          disabled={!name.trim() || !menu.isOpen}
           onClick={() => setStep("menu")}
           className="w-full rounded-lg py-3.5 font-semibold disabled:opacity-40 transition-transform active:scale-[0.98]"
           style={{ background: "#1F5F5B", color: "#FAF6EE" }}
@@ -408,7 +429,9 @@ function UserFlow({ menu, qr, onBack, onRefreshMenu, onDone }) {
           <p className="text-center text-xs text-[#B33A2E] mt-3">Ordering is closed for today.</p>
         )}
         {menu.isOpen && dishes.length === 0 && (
-          <p className="text-center text-xs text-[#B8842E] mt-3">No dishes posted yet.</p>
+          <p className="text-center text-xs text-[#B8842E] mt-3">
+            No dishes posted yet — you can still request something below.
+          </p>
         )}
       </div>
     );
@@ -476,6 +499,61 @@ function UserFlow({ menu, qr, onBack, onRefreshMenu, onDone }) {
               </div>
             );
           })}
+
+          <div className="mt-2">
+            <div className="text-xs uppercase tracking-wide font-semibold text-[#7A7166] mb-2">
+              Not on the menu?
+            </div>
+            {customItems.map((c) => (
+              <div key={c.id} className="flex items-center justify-between py-2">
+                <div className="pr-3">
+                  <div className="text-sm">{c.name}</div>
+                  <div className="text-[10px] text-[#B8842E]">Price to be confirmed by admin</div>
+                </div>
+                <div
+                  className="shrink-0 flex items-center gap-3 rounded-md px-2 py-1.5"
+                  style={{ background: "#F0EADA" }}
+                >
+                  <button
+                    onClick={() => setCustomItemQty(c.id, c.qty - 1)}
+                    className="w-6 h-6 flex items-center justify-center rounded"
+                    style={{ color: "#1F5F5B" }}
+                  >
+                    <Minus className="w-4 h-4" />
+                  </button>
+                  <span className="fo-num text-sm font-semibold w-4 text-center">{c.qty}</span>
+                  <button
+                    onClick={() => setCustomItemQty(c.id, c.qty + 1)}
+                    className="w-6 h-6 flex items-center justify-center rounded"
+                    style={{ color: "#1F5F5B" }}
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+            <div className="flex items-center gap-2 mt-1">
+              <input
+                value={customFoodName}
+                onChange={(e) => setCustomFoodName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addCustomItem()}
+                placeholder="Type what you'd like"
+                className="flex-1 border rounded-md px-3 py-2.5 text-sm outline-none"
+                style={{ borderColor: "#DCD3C2", background: "#FFFFFF" }}
+              />
+              <button
+                onClick={addCustomItem}
+                disabled={!customFoodName.trim()}
+                className="shrink-0 rounded-md px-4 py-2.5 text-sm font-semibold disabled:opacity-40"
+                style={{ background: "#1F5F5B", color: "#FAF6EE" }}
+              >
+                Add
+              </button>
+            </div>
+            <p className="text-[10px] text-[#B3A992] mt-2">
+              The admin will set a price for this and follow up with you.
+            </p>
+          </div>
         </div>
 
         <div
@@ -484,17 +562,17 @@ function UserFlow({ menu, qr, onBack, onRefreshMenu, onDone }) {
         >
           <div className="w-full max-w-md px-6 pb-6 pt-4">
             <button
-              disabled={items.length === 0}
+              disabled={items.length === 0 && customItems.length === 0}
               onClick={() => setStep("checkout")}
               className="w-full rounded-lg py-3.5 font-semibold disabled:opacity-40 flex items-center justify-between px-5 transition-transform active:scale-[0.98]"
               style={{ background: "#1F5F5B", color: "#FAF6EE" }}
             >
               <span>
-                {items.length === 0
-                  ? "Select a dish to continue"
-                  : `Review order · ${items.reduce((s, i) => s + i.qty, 0)} item(s)`}
+                {items.length === 0 && customItems.length === 0
+                  ? "Select or request an item to continue"
+                  : `Review order · ${items.reduce((s, i) => s + i.qty, 0) + customItems.reduce((s, c) => s + c.qty, 0)} item(s)`}
               </span>
-              {items.length > 0 && <span className="fo-num">{money(total)}</span>}
+              {total > 0 && <span className="fo-num">{money(total)}</span>}
             </button>
           </div>
         </div>
@@ -519,113 +597,145 @@ function UserFlow({ menu, qr, onBack, onRefreshMenu, onDone }) {
                 </span>
                 <span className="fo-num">{money(it.price * it.qty)}</span>
               </div>
-              {idx < items.length - 1 && (
+              {(idx < items.length - 1 || customItems.length > 0) && (
+                <div className="border-t border-dashed my-0.5" style={{ borderColor: "#EEE7D8" }} />
+              )}
+            </div>
+          ))}
+          {customItems.map((c, idx) => (
+            <div key={c.id}>
+              <div className="flex justify-between text-sm py-1.5">
+                <span>
+                  {c.qty}× {c.name}
+                </span>
+                <span className="fo-num text-[#B8842E]">price TBC</span>
+              </div>
+              {idx < customItems.length - 1 && (
                 <div className="border-t border-dashed my-0.5" style={{ borderColor: "#EEE7D8" }} />
               )}
             </div>
           ))}
           <div className="border-t mt-2 pt-2 flex justify-between fo-serif text-lg" style={{ borderColor: "#DCD3C2" }}>
-            <span>Total</span>
+            <span>{total > 0 ? "Total to pay now" : "Total"}</span>
             <span className="fo-num">{money(total)}</span>
           </div>
+          {customItems.length > 0 && (
+            <p className="text-[10px] text-[#B8842E] mt-1">
+              Custom item price(s) will be confirmed by the admin separately.
+            </p>
+          )}
         </div>
 
-        <div
-          className="rounded-lg p-5 border mb-5 flex flex-col items-center text-center"
-          style={{ borderColor: "#DCD3C2", background: "#FFFFFF" }}
-        >
-          {qr.imageDataUrl ? (
-            <button
-              type="button"
-              onClick={() => setQrZoomed(true)}
-              className="mb-3 rounded"
-            >
-              <img
-                src={qr.imageDataUrl}
-                alt="TnG payment QR code"
-                className="w-48 h-48 object-contain rounded"
-              />
-            </button>
-          ) : (
+        {total > 0 ? (
+          <>
             <div
-              className="w-48 h-48 flex items-center justify-center rounded mb-3"
-              style={{ background: "#F0EADA", color: "#B3A992" }}
+              className="rounded-lg p-5 border mb-5 flex flex-col items-center text-center"
+              style={{ borderColor: "#DCD3C2", background: "#FFFFFF" }}
             >
-              <QrCode className="w-12 h-12" />
+              {qr.imageDataUrl ? (
+                <button
+                  type="button"
+                  onClick={() => setQrZoomed(true)}
+                  className="mb-3 rounded"
+                >
+                  <img
+                    src={qr.imageDataUrl}
+                    alt="TnG payment QR code"
+                    className="w-48 h-48 object-contain rounded"
+                  />
+                </button>
+              ) : (
+                <div
+                  className="w-48 h-48 flex items-center justify-center rounded mb-3"
+                  style={{ background: "#F0EADA", color: "#B3A992" }}
+                >
+                  <QrCode className="w-12 h-12" />
+                </div>
+              )}
+              {qr.imageDataUrl && (
+                <p className="text-[10px] text-[#B3A992] -mt-2 mb-1">Tap the QR to enlarge</p>
+              )}
+              <div className="text-xs uppercase tracking-wide text-[#7A7166] font-semibold mb-1">
+                Scan with TnG eWallet
+              </div>
+              {qr.payeeName && <div className="fo-serif text-base">{qr.payeeName}</div>}
+              <div className="fo-num text-2xl font-semibold mt-2" style={{ color: "#1F5F5B" }}>
+                {money(total)}
+              </div>
+              {qr.note && <p className="text-xs text-[#7A7166] mt-2">{qr.note}</p>}
+              {!qr.imageDataUrl && (
+                <p className="text-xs text-[#B33A2E] mt-2">Admin hasn't uploaded a QR code yet.</p>
+              )}
             </div>
-          )}
-          {qr.imageDataUrl && (
-            <p className="text-[10px] text-[#B3A992] -mt-2 mb-1">Tap the QR to enlarge</p>
-          )}
-          <div className="text-xs uppercase tracking-wide text-[#7A7166] font-semibold mb-1">
-            Scan with TnG eWallet
-          </div>
-          {qr.payeeName && <div className="fo-serif text-base">{qr.payeeName}</div>}
-          <div className="fo-num text-2xl font-semibold mt-2" style={{ color: "#1F5F5B" }}>
-            {money(total)}
-          </div>
-          {qr.note && <p className="text-xs text-[#7A7166] mt-2">{qr.note}</p>}
-          {!qr.imageDataUrl && (
-            <p className="text-xs text-[#B33A2E] mt-2">Admin hasn't uploaded a QR code yet.</p>
-          )}
-        </div>
 
-        <div
-          className="rounded-lg p-4 border mb-5"
-          style={{ borderColor: "#DCD3C2", background: "#FFFFFF" }}
-        >
-          <div className="text-xs uppercase tracking-wide font-semibold text-[#7A7166] mb-3">
-            Upload payment screenshot
-          </div>
-          {proofImage ? (
-            <div className="flex flex-col items-center">
-              <img
-                src={proofImage}
-                alt="Payment screenshot preview"
-                className="w-full max-w-[220px] rounded-lg mb-3 border"
-                style={{ borderColor: "#DCD3C2" }}
-              />
-              <label
-                className="text-xs font-semibold px-4 py-2 rounded-md border cursor-pointer"
-                style={{ borderColor: "#DCD3C2" }}
-              >
-                Replace screenshot
-                <input type="file" accept="image/*" onChange={handleProofFile} className="hidden" />
-              </label>
-            </div>
-          ) : (
-            <label
-              className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed py-8 cursor-pointer"
-              style={{ borderColor: "#DCD3C2" }}
+            <div
+              className="rounded-lg p-4 border mb-5"
+              style={{ borderColor: "#DCD3C2", background: "#FFFFFF" }}
             >
-              <ImagePlus className="w-6 h-6" style={{ color: "#B3A992" }} />
-              <span className="text-sm font-semibold" style={{ color: "#1F5F5B" }}>
-                Tap to upload a screenshot
-              </span>
-              <span className="text-xs text-[#7A7166]">Your TnG payment confirmation</span>
-              <input type="file" accept="image/*" onChange={handleProofFile} className="hidden" />
-            </label>
-          )}
-        </div>
+              <div className="text-xs uppercase tracking-wide font-semibold text-[#7A7166] mb-3">
+                Upload payment screenshot
+              </div>
+              {proofImage ? (
+                <div className="flex flex-col items-center">
+                  <img
+                    src={proofImage}
+                    alt="Payment screenshot preview"
+                    className="w-full max-w-[220px] rounded-lg mb-3 border"
+                    style={{ borderColor: "#DCD3C2" }}
+                  />
+                  <label
+                    className="text-xs font-semibold px-4 py-2 rounded-md border cursor-pointer"
+                    style={{ borderColor: "#DCD3C2" }}
+                  >
+                    Replace screenshot
+                    <input type="file" accept="image/*" onChange={handleProofFile} className="hidden" />
+                  </label>
+                </div>
+              ) : (
+                <label
+                  className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed py-8 cursor-pointer"
+                  style={{ borderColor: "#DCD3C2" }}
+                >
+                  <ImagePlus className="w-6 h-6" style={{ color: "#B3A992" }} />
+                  <span className="text-sm font-semibold" style={{ color: "#1F5F5B" }}>
+                    Tap to upload a screenshot
+                  </span>
+                  <span className="text-xs text-[#7A7166]">Your TnG payment confirmation</span>
+                  <input type="file" accept="image/*" onChange={handleProofFile} className="hidden" />
+                </label>
+              )}
+            </div>
 
-        <p className="text-xs text-[#7A7166] mb-5 text-center leading-relaxed">
-          Pay the exact amount above via TnG, upload a screenshot of the
-          confirmation, then tap the button below. Your order will be
-          marked <em>pending</em> until the admin confirms the transfer
-          landed.
-        </p>
+            <p className="text-xs text-[#7A7166] mb-5 text-center leading-relaxed">
+              Pay the exact amount above via TnG, upload a screenshot of the
+              confirmation, then tap the button below. Your order will be
+              marked <em>pending</em> until the admin confirms the transfer
+              landed.
+            </p>
+          </>
+        ) : (
+          <div
+            className="rounded-lg p-5 border mb-5 text-center"
+            style={{ borderColor: "#DCD3C2", background: "#FFFFFF" }}
+          >
+            <p className="text-sm text-[#7A7166]">
+              Nothing to pay yet — this is a custom request. The admin will
+              set a price and follow up with you for payment.
+            </p>
+          </div>
+        )}
 
         <div className="flex-1" />
         <button
-          disabled={submitting || !proofImage}
+          disabled={submitting || (total > 0 && !proofImage)}
           onClick={handleSubmitOrder}
           className="w-full rounded-lg py-3.5 font-semibold flex items-center justify-center gap-2 transition-transform active:scale-[0.98] disabled:opacity-60"
           style={{ background: "#1F5F5B", color: "#FAF6EE" }}
         >
           {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-          I've completed payment — submit order
+          {total > 0 ? "I've completed payment — submit order" : "Submit request"}
         </button>
-        {!proofImage && (
+        {total > 0 && !proofImage && (
           <p className="text-center text-xs text-[#B8842E] mt-2">
             Upload your payment screenshot to continue
           </p>
@@ -666,13 +776,22 @@ function UserFlow({ menu, qr, onBack, onRefreshMenu, onDone }) {
         <div className="w-16 h-16 rounded-full flex items-center justify-center mb-5" style={{ background: "#1F5F5B" }}>
           <Check className="w-8 h-8" style={{ color: "#FAF6EE" }} />
         </div>
-        <h2 className="fo-serif text-2xl mb-2">Order submitted</h2>
+        <h2 className="fo-serif text-2xl mb-2">
+          {submittedOrder.total > 0 ? "Order submitted" : "Request submitted"}
+        </h2>
         <p className="text-sm text-[#7A7166] mb-6 max-w-xs">
-          Thanks, {submittedOrder.name.split(" ")[0]}. Your order is{" "}
-          <Stamp tone={toneForStatus(submittedOrder.status)}>
-            {statusLabel(submittedOrder.status)}
-          </Stamp>{" "}
-          until the admin confirms your payment came through.
+          Thanks, {submittedOrder.name.split(" ")[0]}.{" "}
+          {submittedOrder.total > 0 ? (
+            <>
+              Your order is{" "}
+              <Stamp tone={toneForStatus(submittedOrder.status)}>
+                {statusLabel(submittedOrder.status)}
+              </Stamp>{" "}
+              until the admin confirms your payment came through.
+            </>
+          ) : (
+            "The admin will price your request and follow up with you."
+          )}
         </p>
         <div className="rounded-lg p-4 border w-full text-left mb-8" style={{ borderColor: "#DCD3C2", background: "#FFFFFF" }}>
           {submittedOrder.items.map((it) => (
@@ -683,8 +802,16 @@ function UserFlow({ menu, qr, onBack, onRefreshMenu, onDone }) {
               <span className="fo-num">{money(it.price * it.qty)}</span>
             </div>
           ))}
+          {(submittedOrder.customItems || []).map((c, idx) => (
+            <div key={idx} className="flex justify-between text-sm py-1">
+              <span>
+                {c.qty}× {c.name}
+              </span>
+              <span className="fo-num text-[#B8842E]">price TBC</span>
+            </div>
+          ))}
           <div className="border-t mt-2 pt-2 flex justify-between fo-serif" style={{ borderColor: "#DCD3C2" }}>
-            <span>Total paid</span>
+            <span>{submittedOrder.total > 0 ? "Total paid" : "Total"}</span>
             <span className="fo-num">{money(submittedOrder.total)}</span>
           </div>
         </div>
@@ -1147,6 +1274,7 @@ function OrdersPanel() {
   const [busyId, setBusyId] = useState(null);
   const [zoomedProof, setZoomedProof] = useState(null);
   const [confirmingId, setConfirmingId] = useState(null);
+  const [priceDrafts, setPriceDrafts] = useState({}); // `${orderKey}:${itemIdx}` -> string
 
   const loadOrders = useCallback(async (d) => {
     setLoading(true);
@@ -1184,6 +1312,32 @@ function OrdersPanel() {
     await storageDelete(order.key);
     setOrders((prev) => prev.filter((o) => o.key !== order.key));
     setConfirmingId(null);
+    setBusyId(null);
+  }
+
+  async function setCustomItemPrice(order, itemIdx, priceStr) {
+    const priceNum = parseFloat(priceStr);
+    if (isNaN(priceNum) || priceNum < 0) return;
+    setBusyId(order.key);
+    const nextCustomItems = order.customItems.map((c, idx) =>
+      idx === itemIdx ? { ...c, price: priceNum } : c
+    );
+    const dishesTotal = order.items.reduce((s, it) => s + it.price * it.qty, 0);
+    const customTotal = nextCustomItems.reduce((s, c) => s + (c.price || 0) * c.qty, 0);
+    const nextTotal = dishesTotal + customTotal;
+    const next = { ...order, customItems: nextCustomItems, total: nextTotal };
+    delete next.key;
+    await storageSet(order.key, JSON.stringify(next));
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.key === order.key ? { ...o, customItems: nextCustomItems, total: nextTotal } : o
+      )
+    );
+    setPriceDrafts((prev) => {
+      const next = { ...prev };
+      delete next[`${order.key}:${itemIdx}`];
+      return next;
+    });
     setBusyId(null);
   }
 
@@ -1295,6 +1449,55 @@ function OrdersPanel() {
               <div className="text-xs text-[#7A7166] mb-2">
                 {order.items.map((it) => `${it.qty}× ${it.name}`).join(", ")}
               </div>
+
+              {order.customItems && order.customItems.length > 0 && (
+                <div
+                  className="rounded-md border p-3 mb-3"
+                  style={{ borderColor: "#DCD3C2", background: "#FBF7EE" }}
+                >
+                  <div className="text-[10px] uppercase tracking-wide font-semibold text-[#7A7166] mb-2">
+                    Custom request{order.customItems.length > 1 ? "s" : ""}
+                  </div>
+                  {order.customItems.map((c, itemIdx) => {
+                    const draftKey = `${order.key}:${itemIdx}`;
+                    return (
+                      <div key={itemIdx} className="flex items-center justify-between gap-2 py-1">
+                        <span className="text-sm">
+                          {c.qty}× {c.name}
+                        </span>
+                        {c.price != null ? (
+                          <span className="fo-num text-sm font-semibold" style={{ color: "#1F5F5B" }}>
+                            {money(c.price)}
+                          </span>
+                        ) : (
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <input
+                              value={priceDrafts[draftKey] ?? ""}
+                              onChange={(e) =>
+                                setPriceDrafts((prev) => ({ ...prev, [draftKey]: e.target.value }))
+                              }
+                              placeholder="RM"
+                              type="number"
+                              step="0.10"
+                              min="0"
+                              className="w-16 border rounded px-2 py-1 text-xs outline-none fo-num"
+                              style={{ borderColor: "#DCD3C2" }}
+                            />
+                            <button
+                              disabled={busyId === order.key || !priceDrafts[draftKey]}
+                              onClick={() => setCustomItemPrice(order, itemIdx, priceDrafts[draftKey])}
+                              className="text-xs font-semibold px-2 py-1 rounded"
+                              style={{ background: "#1F5F5B", color: "#FAF6EE" }}
+                            >
+                              Set
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
               {order.proofImage && (
                 <button
