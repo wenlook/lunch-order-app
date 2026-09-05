@@ -656,7 +656,7 @@ function HomeScreen({ menu, onOrder, onAdmin }) {
       </div>
 
       <p className="text-center text-[10px] text-[var(--text-faint)] mt-10">
-        Internal lunch ordering · not affiliated with Touch 'n Go
+        Develop for internal use.
       </p>
     </div>
   );
